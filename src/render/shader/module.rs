@@ -11,7 +11,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use render::shader::lang::parser;
-use render::shader::lang::syntax::{Declaration, ExternalDeclaration, Module as SyntaxModule, SingleDeclaration, StorageQualifier, TypeQualifier, TypeQualifierSpec};
+use render::shader::lang::syntax::{Declaration, ExternalDeclaration, FunctionDefinition,
+                                   Module as SyntaxModule, SingleDeclaration, StorageQualifier,
+                                   TypeQualifier, TypeQualifierSpec};
 use sys::resource::{CacheKey, Load, LoadError, LoadResult, Store, StoreKey};
 
 /// Shader module.
@@ -81,13 +83,13 @@ impl Module {
     Ok((module, deps))
   }
 
-  /// Gets all the uniforms defined in a module.
+  /// Get all the uniforms defined in a module.
   pub fn uniforms(&self) -> Vec<SingleDeclaration> {
     let mut uniforms = Vec::new();
 
     for glsl in &self.0.glsl {
       if let ExternalDeclaration::Declaration(Declaration::InitDeclaratorList(ref i)) = *glsl {
-        if let Some(ref q) = (i.head.ty.qualifier) {
+        if let Some(ref q) = i.head.ty.qualifier {
           if q.qualifiers.contains(&TypeQualifierSpec::Storage(StorageQualifier::Uniform)) {
             uniforms.push(i.head.clone());
 
@@ -106,6 +108,14 @@ impl Module {
     }
 
     uniforms
+  }
+
+  /// Get all the functions.
+  pub fn functions(&self) -> Vec<FunctionDefinition> {
+    self.0.glsl.iter().filter_map(|ed| match *ed {
+      ExternalDeclaration::FunctionDefinition(ref def) => Some(def.clone()),
+      _ => None
+    }).collect()
   }
 }
 
