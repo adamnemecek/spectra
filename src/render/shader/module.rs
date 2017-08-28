@@ -11,9 +11,10 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use render::shader::lang::parser;
-use render::shader::lang::syntax::{Declaration, ExternalDeclaration, FunctionDefinition,
+use render::shader::lang::syntax::{Declaration, ExternalDeclaration, FunctionDefinition, FullySpecifiedType,
+                                   FunctionParameterDeclaration, InitDeclaratorList,
                                    Module as SyntaxModule, SingleDeclaration, StorageQualifier,
-                                   TypeQualifier, TypeQualifierSpec};
+                                   TypeQualifierSpec};
 use sys::resource::{CacheKey, Load, LoadError, LoadResult, Store, StoreKey};
 
 /// Shader module.
@@ -118,6 +119,67 @@ impl Module {
     }).collect()
   }
 }
+
+/// Vertex shader I/O interface.
+///
+/// It contains the inputs and the outputs to the next stage.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VertexShaderInterface {
+  inputs: Vec<ExternalDeclaration>,
+  outputs: FullySpecifiedType
+}
+
+#[derive(Clone, Eq, Debug, PartialEq)]
+pub enum VertexShaderInterfaceError {
+  UnnamedInput
+}
+
+/// Build the vertex shader interface from a function definition.
+pub fn vertex_shader_interface(fun_def: &FunctionDefinition) -> Result<VertexShaderInterface, VertexShaderInterfaceError> {
+  let proto = &fun_def.prototype;
+  let inputs = vertex_shader_interface_inputs(proto.parameters.iter())?;
+  let outputs = proto.ty.clone();
+
+  Ok(VertexShaderInterface { inputs, outputs })
+}
+
+fn vertex_shader_interface_inputs<'a, I>(args: I) -> Result<Vec<ExternalDeclaration>, VertexShaderInterfaceError> where I: IntoIterator<Item = &'a FunctionParameterDeclaration> {
+  let mut inputs = Vec::new();
+
+  for arg in args {
+    match *arg {
+      FunctionParameterDeclaration::Unnamed(..) => return Err(VertexShaderInterfaceError::UnnamedInput),
+      FunctionParameterDeclaration::Named(ref ty_qual, ref decl) => {
+        let qualifier = ty_qual.clone();
+        let ty = decl.ty.clone();
+        let name = Some(decl.name.clone());
+        let array_spec = decl.array_spec.clone();
+        let idl = InitDeclaratorList {
+          head: SingleDeclaration {
+            ty: FullySpecifiedType {
+              qualifier,
+              ty
+            },
+            name,
+            array_specifier: array_spec,
+            initializer: None
+          },
+          tail: Vec::new()
+        };
+        let ed = ExternalDeclaration::Declaration(Declaration::InitDeclaratorList(idl));
+
+        inputs.push(ed);
+      }
+    }
+  }
+
+  Ok(inputs)
+}
+
+fn vertex_shader_interface_outputs(ty: &FullySpecifiedType) -> Result<Vec<ExternalDeclaration>, VertexShaderInterface> {
+  let mut outputs = Vec::new();
+}
+
 
 /// Class of errors that can happen in dependencies.
 #[derive(Clone, Debug, PartialEq)]
