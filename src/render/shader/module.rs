@@ -105,6 +105,7 @@ use std::fs::File;
 use std::io::Read;
 use std::iter::once;
 use std::path::{Path, PathBuf};
+use glsl::writer;
 
 use render::shader::lang::parser;
 // FIXME: qualified use, it’s ugly now
@@ -162,8 +163,8 @@ impl Module {
 
   /// Fold a module and its dependencies into a single module. The list of dependencies is also
   /// returned.
-  pub fn gather(&self, store: &mut Store, k: &ModuleKey) -> Result<(Self, Vec<ModuleKey>), DepsError> {
-    let deps = self.deps(store, k)?;
+  pub fn gather(&self, store: &mut Store, key: &ModuleKey) -> Result<(Self, Vec<ModuleKey>), DepsError> {
+    let deps = self.deps(store, key)?;
     let glsl =
       deps.iter()
           .flat_map(|kd| {
@@ -180,6 +181,44 @@ impl Module {
     });
 
     Ok((module, deps))
+  }
+
+  /// Fold a module into its raw GLSL representation.
+  fn to_glsl_string(&self) -> Result<GLSLString, GLSLConversionError> {
+    let uniforms = self.uniforms();
+    let blocks = self.blocks();
+    let structs = self.structs();
+    let functions = self.functions();
+
+    let mut has_vs = false;
+    let mut has_fs = false;
+    let mut src = String::new();
+
+    for fun in &functions {
+      if fun.prototype.name == "map_vertex" { // enable the vertex shader
+        let vi = vertex_shader_interface(fun, &structs);
+        match vi {
+          Ok(iface) => {
+            // sink the inputs and outputs first
+            for d in &iface.inputs {
+              writer::show_external_declaration(&mut src, d);
+            }
+
+            for d in &iface.outputs {
+              writer::show_external_declaration(&mut src, d);
+            }
+
+            // then sink the map_vertex function
+            writer::show_function(&mut src, fun);
+
+            has_vs = true;
+          }
+          Err(e) => return Err(GLSLConversionError::VertexShader(e))
+        }
+      }
+    }
+
+    Ok(src)
   }
 
   /// Get all the uniforms defined in a module.
@@ -250,6 +289,12 @@ impl Module {
     }).collect()
   }
 }
+
+enum GLSLConversionError {
+  VertexShader(VertexShaderInterfaceError)
+}
+
+type GLSLString = String;
 
 /// Vertex shader I/O interface.
 ///
