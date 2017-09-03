@@ -108,7 +108,7 @@ use std::path::{Path, PathBuf};
 
 use render::shader::lang::parser;
 // FIXME: qualified use, it’s ugly now
-use render::shader::lang::syntax::{Declaration, ExternalDeclaration, FunctionDefinition, FullySpecifiedType,
+use render::shader::lang::syntax::{Block, Declaration, ExternalDeclaration, FunctionDefinition, FullySpecifiedType,
                                    FunctionParameterDeclaration, InitDeclaratorList, Expr,
                                    Module as SyntaxModule, SingleDeclaration, StorageQualifier,
                                    StructSpecifier, StructFieldSpecifier, LayoutQualifier,
@@ -207,6 +207,16 @@ impl Module {
     }
 
     uniforms
+  }
+
+  /// Get all the blocks defined in a module.
+  pub fn blocks(&self) -> Vec<Block> {
+    self.0.glsl.iter().filter_map(|ed| {
+      match *ed {
+        ExternalDeclaration::Declaration(Declaration::Block(ref b)) => Some(b.clone()),
+        _ => None
+      }
+    }).collect()
   }
 
   /// Get all the functions.
