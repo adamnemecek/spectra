@@ -428,6 +428,7 @@ impl<T> UnwrapOrUnbound<T> for Result<Uniform<T>, UniformWarning> {
   }
 }
 
+// FIXME: test only
 pub fn from_spsl(key: &ModuleKey, store: &mut Store) {
   if let Some(module) = store.get(key) {
     let (gathered, _) = module.borrow().gather(store, key).unwrap();
