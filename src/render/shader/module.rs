@@ -101,6 +101,7 @@
 //! }
 //! ```
 
+use std::fmt::Write;
 use std::fs::File;
 use std::io::Read;
 use std::iter::once;
@@ -113,7 +114,7 @@ use render::shader::lang::syntax::{Block, Declaration, ExternalDeclaration, Func
                                    FunctionParameterDeclaration, InitDeclaratorList, Expr,
                                    Module as SyntaxModule, SingleDeclaration, StorageQualifier,
                                    StructSpecifier, StructFieldSpecifier, LayoutQualifier,
-                                   TypeSpecifier, TypeQualifier, TypeQualifierSpec, LayoutQualifierSpec};
+                                   TypeSpecifier, TypeSpecifierNonArray, TypeQualifier, TypeQualifierSpec, LayoutQualifierSpec};
 use sys::resource::{CacheKey, Load, LoadError, LoadResult, Store, StoreKey};
 
 /// Shader module.
@@ -184,7 +185,7 @@ impl Module {
   }
 
   /// Fold a module into its raw GLSL representation.
-  fn to_glsl_string(&self) -> Result<GLSLString, GLSLConversionError> {
+  pub fn to_glsl_string(&self) -> Result<GLSLString, GLSLConversionError> {
     let uniforms = self.uniforms();
     let blocks = self.blocks();
     let structs = self.structs();
@@ -201,15 +202,20 @@ impl Module {
           Ok(iface) => {
             // sink the inputs and outputs first
             for d in &iface.inputs {
-              writer::show_external_declaration(&mut src, d);
+              writer::glsl::show_external_declaration(&mut src, d);
             }
 
             for d in &iface.outputs {
-              writer::show_external_declaration(&mut src, d);
+              writer::glsl::show_external_declaration(&mut src, d);
             }
 
             // then sink the map_vertex function
-            writer::show_function(&mut src, fun);
+            writer::glsl::show_function_definition(&mut src, fun);
+
+            // sink the main function for the vertex shader
+            write!(&mut src, "void main() {{\n\
+                                {:?} v = map_vertex(TODO);", fun.prototype.ty.ty);
+            src.write_str(");\n}");
 
             has_vs = true;
           }
@@ -275,7 +281,10 @@ impl Module {
             InitDeclaratorList {
               head: SingleDeclaration {
                 ty: FullySpecifiedType {
-                  ty: TypeSpecifier::Struct(ref s),
+                  ty: TypeSpecifier {
+                    ty: TypeSpecifierNonArray::Struct(ref s),
+                    ..
+                  },
                   ..
                 },
                 ..
@@ -290,11 +299,11 @@ impl Module {
   }
 }
 
-enum GLSLConversionError {
+pub enum GLSLConversionError {
   VertexShader(VertexShaderInterfaceError)
 }
 
-type GLSLString = String;
+pub type GLSLString = String;
 
 /// Vertex shader I/O interface.
 ///
@@ -378,8 +387,8 @@ fn vertex_shader_outputs(fsty: &FullySpecifiedType, structs: &[StructSpecifier])
   let ty = &fsty.ty;
 
   // we enforce that the output must be a struct that follows a certain pattern
-  match *ty {
-    TypeSpecifier::TypeName(ref ty_name) => {
+  match ty.ty {
+    TypeSpecifierNonArray::TypeName(ref ty_name) => {
       let real_ty = structs.iter().find(|ref s| s.name.as_ref() == Some(ty_name));
 
       match real_ty {
@@ -388,7 +397,7 @@ fn vertex_shader_outputs(fsty: &FullySpecifiedType, structs: &[StructSpecifier])
           let first_field = &s.fields[0];
 
           if first_field.qualifier.is_some() ||
-             first_field.ty != TypeSpecifier::Vec4 ||
+             first_field.ty.ty != TypeSpecifierNonArray::Vec4 ||
              first_field.identifiers != vec![("gl_Position".to_owned(), None)] {
             return Err(VertexShaderInterfaceError::WrongOutputFirstField(first_field.clone()));
           }
@@ -398,7 +407,7 @@ fn vertex_shader_outputs(fsty: &FullySpecifiedType, structs: &[StructSpecifier])
           let mut outputs = Vec::new();
 
           for (i, field) in (&s.fields[1..]).into_iter().enumerate() {
-            if let TypeSpecifier::Struct(_) = field.ty {
+            if let TypeSpecifierNonArray::Struct(_) = field.ty.ty {
               return Err(VertexShaderInterfaceError::OutputFieldCannotBeStruct(i, field.ty.clone()));
             }
 
