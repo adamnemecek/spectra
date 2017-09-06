@@ -184,8 +184,8 @@ impl Module {
     Ok((module, deps))
   }
 
-  /// Fold a module into its raw GLSL representation.
-  pub fn to_glsl_string(&self) -> Result<GLSLString, GLSLConversionError> {
+  /// Fold a module into its GLSL setup.
+  pub fn to_glsl_setup(&self) -> Result<GLSLSetup, GLSLConversionError> {
     let uniforms = self.uniforms();
     let blocks = self.blocks();
     let structs = self.structs();
@@ -219,8 +219,15 @@ impl Module {
 
     if vs.is_empty() {
       Err(GLSLConversionError::NoVertexShader)
+    } else if fs.is_empty() {
+      Err(GLSLConversionError::NoFragmentShader)
     } else {
-      Ok(common.clone() + &vs)
+      let setup = GLSLSetup {
+        vs: common.clone() + &vs,
+        fs: common.clone() + &fs
+      };
+
+      Ok(setup)
     }
   }
 
@@ -303,7 +310,11 @@ pub enum GLSLConversionError {
   NoFragmentShader
 }
 
-pub type GLSLString = String;
+#[derive(Clone, Debug, PartialEq)]
+pub struct GLSLSetup {
+  vs: String,
+  fs: String
+}
 
 /// Vertex shader I/O interface.
 ///
